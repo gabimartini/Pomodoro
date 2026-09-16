@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import ModeSelector from './components/ModeSelector'
 import SessionList from './components/SessionList'
 import SettingsPanel from './components/SettingsPanel'
@@ -15,37 +15,27 @@ function App() {
 
   const activeModeLabel = MODES.find((m) => m.key === mode)!.label
 
-  // Mirrors secondsLeft so the interval tick can read the latest value
-  // without needing secondsLeft in its dependency array (which would
-  // otherwise restart the interval every second).
-  const secondsLeftRef = useRef(secondsLeft)
-  useEffect(() => {
-    secondsLeftRef.current = secondsLeft
-  }, [secondsLeft])
+  // Effect Event (React 19.2): always reads the latest secondsLeft/mode/durations
+  // when called, so the interval effect below only needs `isRunning` as a
+  // dependency instead of restarting every time secondsLeft ticks down.
+  const onTick = useEffectEvent(() => {
+    const next = Math.max(0, secondsLeft - 1)
+    setSecondsLeft(next)
+
+    if (next === 0) {
+      setIsRunning(false)
+      setSessions((prevSessions) => [
+        ...prevSessions,
+        { id: crypto.randomUUID(), mode: activeModeLabel, duration: durations[mode] },
+      ])
+    }
+  })
 
   useEffect(() => {
     if (!isRunning) return
 
-    const timer = setInterval(() => {
-      const next = Math.max(0, secondsLeftRef.current - 1)
-      secondsLeftRef.current = next
-      setSecondsLeft(next)
-
-      if (next === 0) {
-        clearInterval(timer)
-        setIsRunning(false)
-        setSessions((prevSessions) => [
-          ...prevSessions,
-          { id: crypto.randomUUID(), mode: activeModeLabel, duration: durations[mode] },
-        ])
-      }
-    }, 1000)
-
+    const timer = setInterval(onTick, 1000)
     return () => clearInterval(timer)
-    // Only isRunning should retrigger this effect: mode/duration changes always
-    // stop the timer via handleModeChange/handleDurationChange before they could
-    // be observed here, so the closed-over values stay correct.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRunning])
 
   const handleModeChange = (nextMode: Mode) => {
